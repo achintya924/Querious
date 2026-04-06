@@ -1,0 +1,15 @@
+{
+  "name": "querious",
+  "version": "1.0.0",
+  "description": "AI-powered data analyst — ask business questions in plain English, get charts and insights",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\" --names \"server,client\" --prefix-colors \"cyan,magenta\"",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "seed": "npm --prefix server run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
