@@ -12,8 +12,8 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", name: "Querious API" });
 });
 
-// Placeholder for future route mounts
-// app.use("/api/auth", require("./routes/authRoutes"));
+// Routes
+app.use("/api/auth", require("./routes/authRoutes"));
 // app.use("/api/query", require("./routes/queryRoutes"));
 // app.use("/api/history", require("./routes/historyRoutes"));
 // app.use("/api/schema", require("./routes/schemaRoutes"));

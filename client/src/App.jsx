@@ -1,25 +1,55 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import LoginForm from "./components/Auth/LoginForm";
+import RegisterForm from "./components/Auth/RegisterForm";
+import ProtectedRoute from "./components/Auth/ProtectedRoute";
+import AppLayout from "./components/Layout/AppLayout";
 
-function Home() {
+function RootRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return <Navigate to={user ? "/dashboard" : "/login"} replace />;
+}
+
+function Dashboard() {
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center text-white">
-      <div className="text-center space-y-4">
-        <h1 className="text-6xl font-bold tracking-tight">
-          <span className="text-violet-400">Querious</span>
-        </h1>
-        <p className="text-2xl text-gray-400 font-light">Ask your data anything</p>
-        <p className="text-sm text-gray-600 mt-8">AI-powered data analyst — coming soon</p>
-      </div>
+    <div className="flex-1 flex items-center justify-center">
+      <p className="text-gray-500 text-lg">Ready to query your data</p>
     </div>
+  );
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="/login" element={<LoginForm />} />
+      <Route path="/register" element={<RegisterForm />} />
+
+      {/* Protected — all dashboard routes live inside AppLayout */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Dashboard />} />
+      </Route>
+
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-      </Routes>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
     </BrowserRouter>
   );
 }
