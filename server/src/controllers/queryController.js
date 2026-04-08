@@ -1,12 +1,13 @@
-const { interpretQuery }  = require("../services/ai/interpreter");
-const { resolveDates }    = require("../services/query/dateResolver");
-const { validateQuery }   = require("../services/query/schemaValidator");
-const { buildPipeline }   = require("../services/query/pipelineBuilder");
-const { recommendChart }  = require("../services/query/chartRecommender");
-const QueryHistory        = require("../models/QueryHistory");
-const Order               = require("../models/Order");
-const Customer            = require("../models/Customer");
-const Product             = require("../models/Product");
+const { interpretQuery }    = require("../services/ai/interpreter");
+const { generateNarrative } = require("../services/ai/narrator");
+const { resolveDates }      = require("../services/query/dateResolver");
+const { validateQuery }     = require("../services/query/schemaValidator");
+const { buildPipeline }     = require("../services/query/pipelineBuilder");
+const { recommendChart }    = require("../services/query/chartRecommender");
+const QueryHistory          = require("../models/QueryHistory");
+const Order                 = require("../models/Order");
+const Customer              = require("../models/Customer");
+const Product               = require("../models/Product");
 
 const MODEL_MAP = { orders: Order, customers: Customer, products: Product };
 
@@ -50,29 +51,34 @@ async function processQuery(req, res) {
     const Model = MODEL_MAP[cleanedQuery.collection];
     const results = await Model.aggregate(pipeline);
 
-    // ── 7. Chart recommendation ─────────────────────────────────────────────────
+    // ── 7. Chart recommendation (now returns an object) ─────────────────────────
     const chartType = recommendChart(cleanedQuery, results);
 
-    // ── 8. Persist to query history ─────────────────────────────────────────────
+    // ── 8. Narrative generation (non-blocking — falls back on error) ────────────
+    const narrative = await generateNarrative(question.trim(), results, cleanedQuery, chartType);
+
+    // ── 9. Persist to query history ─────────────────────────────────────────────
     const latency_ms = Date.now() - start;
     await QueryHistory.create({
-      user_id:             req.user.userId,
-      session_id:          sessionId || undefined,
-      natural_query:       question.trim(),
-      structured_params:   cleanedQuery,
+      user_id:              req.user.userId,
+      session_id:           sessionId || undefined,
+      natural_query:        question.trim(),
+      structured_params:    cleanedQuery,
       aggregation_pipeline: pipeline,
-      result_data:         results,
-      chart_type:          chartType,
+      result_data:          results,
+      chart_type:           chartType.type,
+      narrative,
       latency_ms,
     });
 
-    // ── 9. Respond ───────────────────────────────────────────────────────────────
+    // ── 10. Respond ──────────────────────────────────────────────────────────────
     return res.json({
       success: true,
       type: "result",
       data: {
         results,
         chartType,
+        narrative,
         structuredQuery: cleanedQuery,
         pipeline,
         executionTime: latency_ms,

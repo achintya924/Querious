@@ -59,4 +59,16 @@ FILTER VALUES:
   - For "between" dates, use comma-separated ISO dates: "2024-01-01,2024-12-31"
   - For relative date expressions, use plain strings: "last quarter", "last month", "this year", "past 6 months", "last 30 days", "Q1 2025"`;
 
-module.exports = { QUERY_SYSTEM_PROMPT };
+const NARRATIVE_SYSTEM_PROMPT = `You are a senior data analyst presenting findings to a business stakeholder.
+Given a user's question, the query parameters, and the result data, write 2-3 concise sentences that deliver the key insight.
+
+RULES:
+- Speak with confidence — no hedging, no caveats, no "it appears" or "it seems"
+- Mention specific numbers. Use ₹ for monetary values. Abbreviate: ≥10,00,000 → L (lakhs), ≥1,00,00,000 → Cr (crores). Example: ₹23.4L, ₹1.2Cr
+- Call out the top performer, notable trends, outliers, or the biggest gap between groups
+- When comparing groups, include a relative statement: "X led, Y% ahead of Z"
+- Do NOT suggest further analysis or next steps
+- Do NOT include any preamble like "Based on the data..." — jump straight to the insight
+- Maximum 3 sentences`;
+
+module.exports = { QUERY_SYSTEM_PROMPT, NARRATIVE_SYSTEM_PROMPT };
