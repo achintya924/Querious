@@ -11,14 +11,6 @@ function RootRedirect() {
   return <Navigate to={user ? "/dashboard" : "/login"} replace />;
 }
 
-function Dashboard() {
-  return (
-    <div className="flex-1 flex items-center justify-center">
-      <p className="text-gray-500 text-lg">Ready to query your data</p>
-    </div>
-  );
-}
-
 function AppRoutes() {
   return (
     <Routes>
@@ -26,7 +18,7 @@ function AppRoutes() {
       <Route path="/login" element={<LoginForm />} />
       <Route path="/register" element={<RegisterForm />} />
 
-      {/* Protected — all dashboard routes live inside AppLayout */}
+      {/* AppLayout now owns the full dashboard experience — no nested index route needed */}
       <Route
         path="/dashboard"
         element={
@@ -34,11 +26,8 @@ function AppRoutes() {
             <AppLayout />
           </ProtectedRoute>
         }
-      >
-        <Route index element={<Dashboard />} />
-      </Route>
+      />
 
-      {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
