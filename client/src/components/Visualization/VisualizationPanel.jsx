@@ -1,12 +1,17 @@
+import { useState } from "react";
 import { useConversationContext } from "../../context/ConversationContext";
-import NarrativeBox from "./NarrativeBox";
-import DataTable from "./DataTable";
+import NarrativeBox   from "./NarrativeBox";
+import DataTable      from "./DataTable";
 import LoadingSkeleton from "./LoadingSkeleton";
+import ChartRenderer  from "./ChartRenderer";
+
+const VIEW_OPTIONS = ["Both", "Chart", "Table"];
 
 export default function VisualizationPanel() {
   const { currentResult, loading, error } = useConversationContext();
+  const [view, setView] = useState("Both");
 
-  // Loading state — show skeleton immediately
+  // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="h-full overflow-y-auto">
@@ -15,7 +20,7 @@ export default function VisualizationPanel() {
     );
   }
 
-  // Error state (no result)
+  // ── Error (no result available) ──────────────────────────────────────────
   if (error && !currentResult) {
     return (
       <div className="h-full flex items-center justify-center p-8">
@@ -30,7 +35,7 @@ export default function VisualizationPanel() {
     );
   }
 
-  // Empty state — no query submitted yet
+  // ── Empty state ──────────────────────────────────────────────────────────
   if (!currentResult) {
     return (
       <div className="h-full flex items-center justify-center p-8">
@@ -49,38 +54,66 @@ export default function VisualizationPanel() {
   }
 
   const { data } = currentResult;
-  const { results, chartType, narrative } = data;
+  const { results, chartType, narrative, structuredQuery } = data;
+  const chartTypeObj = typeof chartType === "string" ? { type: chartType } : chartType;
+  const isMetricCard = chartTypeObj?.type === "metric_card";
+  const isTable      = chartTypeObj?.type === "table";
+  const isEmptyState = chartTypeObj?.type === "empty_state";
+
+  // MetricCard and table don't need the Chart/Table toggle
+  const showToggle = !isMetricCard && !isTable && !isEmptyState && results?.length > 0;
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      {/* Chart type badge */}
-      {chartType?.type && (
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-800">{chartType.title}</h2>
-          <span className="text-xs bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full capitalize">
-            {chartType.type.replace(/_/g, " ")}
-          </span>
+      {/* ── Header row: title + type badge + view toggle ── */}
+      <div className="flex items-start justify-between mb-4 gap-3">
+        <div>
+          {chartTypeObj?.title && (
+            <h2 className="text-base font-semibold text-gray-800 leading-snug">
+              {chartTypeObj.title}
+            </h2>
+          )}
+          {chartTypeObj?.type && (
+            <span className="text-xs text-gray-400 capitalize">
+              {chartTypeObj.type.replace(/_/g, " ")}
+            </span>
+          )}
         </div>
-      )}
 
-      {/* AI narrative */}
+        {showToggle && (
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 shrink-0">
+            {VIEW_OPTIONS.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setView(opt)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  view === opt
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── AI Narrative ── */}
       <NarrativeBox narrative={narrative} />
 
-      {/* Chart placeholder — Recharts integration comes in next phase */}
-      {chartType?.type && chartType.type !== "metric_card" && chartType.type !== "table" && chartType.type !== "empty_state" && (
-        <div className="h-48 bg-gray-50 border border-dashed border-gray-200 rounded-xl flex items-center justify-center mb-4">
-          <p className="text-xs text-gray-300">Chart visualization — Phase 5</p>
-        </div>
+      {/* ── Chart ── */}
+      {view !== "Table" && (
+        <ChartRenderer
+          chartType={chartTypeObj}
+          results={results}
+          structuredQuery={structuredQuery}
+        />
       )}
 
-      {/* Metric card */}
-      {chartType?.type === "metric_card" && results?.length > 0 && (
-        <MetricCard result={results[0]} chartType={chartType} />
-      )}
-
-      {/* Data table — always shown */}
-      {results && results.length > 0 && (
-        <div className="mt-2">
+      {/* ── Data Table ── */}
+      {view !== "Chart" && results?.length > 0 && !isMetricCard && (
+        <div className="mt-5">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
             Raw Data
           </p>
@@ -89,23 +122,4 @@ export default function VisualizationPanel() {
       )}
     </div>
   );
-}
-
-function MetricCard({ result, chartType }) {
-  const key   = chartType?.yAxis || Object.keys(result)[0];
-  const value = result[key];
-  const label = chartType?.title || humanise(key);
-
-  return (
-    <div className="bg-violet-50 border border-violet-100 rounded-2xl p-6 mb-4 text-center">
-      <p className="text-xs text-violet-500 font-medium uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-4xl font-bold text-violet-700">
-        {typeof value === "number" ? value.toLocaleString("en-IN") : value}
-      </p>
-    </div>
-  );
-}
-
-function humanise(str) {
-  return str.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }

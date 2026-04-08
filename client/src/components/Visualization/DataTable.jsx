@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDate, formatIndianNumber, isMonetaryField, formatCurrency } from "../../utils/formatters";
 
 const INITIAL_ROWS = 10;
 
@@ -63,28 +64,28 @@ export default function DataTable({ results }) {
 function formatCell(value, key) {
   if (value === null || value === undefined) return "—";
 
-  // Dates
-  if (typeof value === "string" && /^\d{4}-\d{2}(-\d{2})?$/.test(value)) {
-    return value; // already readable YYYY-MM or YYYY-MM-DD
-  }
-  if (value instanceof Date || (typeof value === "string" && !isNaN(Date.parse(value)) && value.includes("T"))) {
-    return new Date(value).toLocaleDateString();
+  // Period strings like "2025-01", "2025-Q2" — format as readable date
+  if (typeof value === "string") {
+    const dated = formatDate(value);
+    if (dated !== value) return dated; // formatDate recognised it
   }
 
-  // Numbers — apply commas and optional decimals
+  // ISO datetime strings
+  if (
+    value instanceof Date ||
+    (typeof value === "string" && value.includes("T") && !isNaN(Date.parse(value)))
+  ) {
+    return new Date(value).toLocaleDateString("en-IN");
+  }
+
+  // Numbers
   if (typeof value === "number") {
-    // Revenue / amount columns → 2 decimal places
-    const isAmount = /amount|price|revenue|cost|total/i.test(key);
-    return value.toLocaleString("en-IN", {
-      maximumFractionDigits: isAmount ? 2 : 0,
-    });
+    return isMonetaryField(key) ? formatCurrency(value) : formatIndianNumber(value);
   }
 
   return String(value);
 }
 
 function humanise(str) {
-  return str
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return str.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
