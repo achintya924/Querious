@@ -1,4 +1,4 @@
-const genAI = require("../../config/gemini");
+const aiClient = require("../../config/aiClient");
 const { NARRATIVE_SYSTEM_PROMPT } = require("./promptTemplates");
 
 /**
@@ -15,13 +15,7 @@ async function generateNarrative(question, results, structuredQuery, chartType) 
       return fallback(results);
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: NARRATIVE_SYSTEM_PROMPT,
-      generationConfig: { temperature: 0.7, maxOutputTokens: 300 },
-    });
-
-    const prompt = `User question: "${question}"
+    const userPrompt = `User question: "${question}"
 
 Query parameters:
 - Collection: ${structuredQuery.collection}
@@ -35,8 +29,17 @@ ${JSON.stringify(results, null, 2)}
 
 Write the business insight narrative now.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
+    const response = await aiClient.chat.completions.create({
+      model: process.env.AI_MODEL,
+      temperature: 0.7,
+      max_tokens: 300,
+      messages: [
+        { role: "system", content: NARRATIVE_SYSTEM_PROMPT },
+        { role: "user",   content: userPrompt },
+      ],
+    });
+
+    const text = response.choices?.[0]?.message?.content?.trim();
     return text || fallback(results);
   } catch (err) {
     console.warn("Narrative generation failed:", err.message);

@@ -1,33 +1,23 @@
-const genAI = require("../../config/gemini");
+const aiClient = require("../../config/aiClient");
 const { queryDatabaseFunction } = require("./functionSchema");
 const { QUERY_SYSTEM_PROMPT } = require("./promptTemplates");
 const { mockInterpretQuery } = require("./mockInterpreter");
 const { mergeContext } = require("../query/contextMerger");
-
-function extractRetrySeconds(err) {
-  const msg = err?.message || "";
-  // "Please retry in 37.4s" — grab the integer before optional decimal
-  const retryMatch = msg.match(/retry in (\d+)(?:\.\d+)?s/i);
-  if (retryMatch) return parseInt(retryMatch[1], 10);
-  // JSON field: "retryDelay":"37s"
-  const delayMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
-  if (delayMatch) return parseInt(delayMatch[1], 10);
-  return null;
-}
 
 function isRateLimitError(err) {
   return (
     err?.status === 429 ||
     err?.message?.includes("429") ||
     err?.message?.includes("Too Many Requests") ||
-    err?.message?.includes("Quota exceeded")
+    err?.message?.includes("rate limit") ||
+    err?.message?.includes("Rate limit")
   );
 }
 
 /**
- * @param {string} question
- * @param {object|null} previousQuery        - Structured query from last turn (or null)
- * @param {Array}       conversationHistory  - Array of { question, structuredQuery }
+ * @param {string}      question
+ * @param {object|null} previousQuery       - Structured query from last turn (or null)
+ * @param {Array}       conversationHistory - Array of { question, structuredQuery }
  */
 async function interpretQuery(question, previousQuery = null, conversationHistory = []) {
   // ── Mock mode ────────────────────────────────────────────────────────────────
@@ -36,53 +26,54 @@ async function interpretQuery(question, previousQuery = null, conversationHistor
     return mockInterpretQuery(question, previousQuery);
   }
 
-  // ── Build prompt (with context if available) ─────────────────────────────────
-  const prompt = mergeContext(question, previousQuery, conversationHistory);
+  // ── Build prompt (with follow-up context if available) ───────────────────────
+  const userPrompt = mergeContext(question, previousQuery, conversationHistory);
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: QUERY_SYSTEM_PROMPT,
-    tools: [{ functionDeclarations: [queryDatabaseFunction] }],
-    toolConfig: { functionCallingConfig: { mode: "ANY" } },
-    generationConfig: { temperature: 0 },
-  });
-
-  let result;
+  let response;
   try {
-    result = await model.generateContent(prompt);
+    response = await aiClient.chat.completions.create({
+      model: process.env.AI_MODEL,
+      temperature: 0,
+      messages: [
+        { role: "system", content: QUERY_SYSTEM_PROMPT },
+        { role: "user",   content: userPrompt },
+      ],
+      tools: [queryDatabaseFunction],
+      tool_choice: { type: "function", function: { name: "query_database" } },
+    });
   } catch (err) {
     if (isRateLimitError(err)) {
-      const retry = extractRetrySeconds(err);
-      const msg = retry
-        ? `AI service is rate-limited. Please try again in ${retry} seconds.`
-        : "AI service is rate-limited. Please try again in a moment.";
-      const rateLimitErr = new Error(msg);
+      const rateLimitErr = new Error("AI service is rate-limited. Please try again in a moment.");
       rateLimitErr.statusCode = 429;
       throw rateLimitErr;
     }
     throw err;
   }
 
-  const candidates = result.response.candidates;
-  if (!candidates || candidates.length === 0) {
-    throw new Error("Gemini returned no candidates");
-  }
+  const choice = response.choices?.[0];
+  if (!choice) throw new Error("Grok returned no choices");
 
-  const parts = candidates[0].content.parts;
-  const fcPart = parts.find((p) => p.functionCall);
-
-  if (!fcPart) {
+  const toolCalls = choice.message?.tool_calls;
+  if (!toolCalls?.length) {
     throw new Error(
-      "Gemini did not return a function call. Response text: " +
-        (parts.find((p) => p.text)?.text || "(none)")
+      "Grok did not return a function call. Response: " +
+        (choice.message?.content || "(none)")
     );
   }
 
-  if (fcPart.functionCall.name !== "query_database") {
-    throw new Error(`Unexpected function call: ${fcPart.functionCall.name}`);
+  const fn = toolCalls[0].function;
+  if (fn.name !== "query_database") {
+    throw new Error(`Unexpected function call: ${fn.name}`);
   }
 
-  return fcPart.functionCall.args;
+  let args;
+  try {
+    args = JSON.parse(fn.arguments);
+  } catch {
+    throw new Error(`Failed to parse function arguments: ${fn.arguments}`);
+  }
+
+  return args;
 }
 
 module.exports = { interpretQuery };
