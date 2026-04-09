@@ -83,7 +83,7 @@ async function processQuery(req, res) {
 
     // ── 10. Persist to query history ──────────────────────────────────────────
     const latency_ms = Date.now() - start;
-    await QueryHistory.create({
+    const historyDoc = await QueryHistory.create({
       user_id:              req.user.userId,
       session_id:           sessionId,
       natural_query:        question.trim(),
@@ -110,6 +110,7 @@ async function processQuery(req, res) {
         pipeline,
         executionTime: latency_ms,
         sessionId,
+        queryHistoryId: historyDoc._id.toString(),
       },
     });
   } catch (err) {

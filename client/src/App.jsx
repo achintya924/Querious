@@ -1,9 +1,11 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ToastProvider } from "./context/ToastContext";
 import LoginForm from "./components/Auth/LoginForm";
 import RegisterForm from "./components/Auth/RegisterForm";
 import ProtectedRoute from "./components/Auth/ProtectedRoute";
 import AppLayout from "./components/Layout/AppLayout";
+import QueryHistory from "./components/History/QueryHistory";
 
 function RootRedirect() {
   const { user, loading } = useAuth();
@@ -18,12 +20,20 @@ function AppRoutes() {
       <Route path="/login" element={<LoginForm />} />
       <Route path="/register" element={<RegisterForm />} />
 
-      {/* AppLayout now owns the full dashboard experience — no nested index route needed */}
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute>
             <AppLayout />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/history"
+        element={
+          <ProtectedRoute>
+            <QueryHistory />
           </ProtectedRoute>
         }
       />
@@ -37,7 +47,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

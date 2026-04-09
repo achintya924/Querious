@@ -54,6 +54,8 @@ function validateQuery(structuredQuery) {
     return { valid: false, error: "At least one metric is required" };
   }
   for (const m of metrics) {
+    // _id is a valid MongoDB field for count/count_distinct operations
+    if (m.field === "_id" && (m.operation === "count" || m.operation === "count_distinct")) continue;
     if (!fields.has(m.field)) {
       return { valid: false, error: `Field "${m.field}" does not exist in collection "${collection}". Available: ${[...fields].join(", ")}` };
     }

@@ -13,10 +13,12 @@ app.get("/api/health", (req, res) => {
 });
 
 // Routes
-app.use("/api/auth",     require("./routes/authRoutes"));
-app.use("/api/query",    require("./routes/queryRoutes"));
-app.use("/api/schema",   require("./routes/schemaRoutes"));
-app.use("/api/sessions", require("./routes/sessionRoutes"));
+app.use("/api/auth",      require("./routes/authRoutes"));
+app.use("/api/query",     require("./routes/queryRoutes"));
+app.use("/api/schema",    require("./routes/schemaRoutes"));
+app.use("/api/sessions",  require("./routes/sessionRoutes"));
+app.use("/api/history",   require("./routes/historyRoutes"));
+app.use("/api/bookmarks", require("./routes/bookmarkRoutes"));
 // app.use("/api/history", require("./routes/historyRoutes"));
 
 // 404 handler

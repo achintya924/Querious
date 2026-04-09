@@ -1,26 +1,79 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useConversationContext } from "../../context/ConversationContext";
-import NarrativeBox   from "./NarrativeBox";
-import DataTable      from "./DataTable";
+import { addBookmark, removeBookmarkByQueryId } from "../../services/bookmarkService";
+import { useToast } from "../../context/ToastContext";
+import NarrativeBox    from "./NarrativeBox";
+import DataTable       from "./DataTable";
 import LoadingSkeleton from "./LoadingSkeleton";
-import ChartRenderer  from "./ChartRenderer";
+import ChartRenderer   from "./ChartRenderer";
 
 const VIEW_OPTIONS = ["Both", "Chart", "Table"];
+
+function BookmarkButton({ queryHistoryId }) {
+  const { addToast }                      = useToast();
+  const [bookmarkId, setBookmarkId]       = useState(null);
+  const [loading, setLoading]             = useState(false);
+
+  // Reset whenever the displayed query changes
+  useEffect(() => { setBookmarkId(null); }, [queryHistoryId]);
+
+  if (!queryHistoryId) return null;
+
+  async function handleToggle() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      if (bookmarkId) {
+        await removeBookmarkByQueryId(queryHistoryId);
+        setBookmarkId(null);
+        addToast("Bookmark removed", "info");
+      } else {
+        const res = await addBookmark(queryHistoryId);
+        setBookmarkId(res.bookmark._id);
+        addToast("Query bookmarked", "success");
+      }
+    } catch (err) {
+      const msg = err.response?.data?.error;
+      // Already bookmarked race condition
+      if (err.response?.status === 409 && err.response?.data?.bookmark) {
+        setBookmarkId(err.response.data.bookmark._id);
+        addToast("Already bookmarked", "info");
+      } else {
+        addToast(msg || "Failed to update bookmark", "error");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={handleToggle}
+      disabled={loading}
+      title={bookmarkId ? "Remove bookmark" : "Bookmark this query"}
+      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors disabled:opacity-50 hover:bg-gray-100"
+    >
+      <span className={`text-base leading-none transition-colors ${bookmarkId ? "text-amber-400" : "text-gray-300 hover:text-amber-400"}`}>
+        {bookmarkId ? "★" : "☆"}
+      </span>
+      <span className="text-gray-400 hidden sm:inline text-[11px]">
+        {bookmarkId ? "Saved" : "Save"}
+      </span>
+    </button>
+  );
+}
 
 export default function VisualizationPanel() {
   const { currentResult, loading, error } = useConversationContext();
   const [view, setView] = useState("Both");
 
-  // ── Loading ──────────────────────────────────────────────────────────────
+  // Reset view when result changes
+  useEffect(() => { setView("Both"); }, [currentResult]);
+
   if (loading) {
-    return (
-      <div className="h-full overflow-y-auto">
-        <LoadingSkeleton />
-      </div>
-    );
+    return <div className="h-full overflow-y-auto"><LoadingSkeleton /></div>;
   }
 
-  // ── Error (no result available) ──────────────────────────────────────────
   if (error && !currentResult) {
     return (
       <div className="h-full flex items-center justify-center p-8">
@@ -35,7 +88,6 @@ export default function VisualizationPanel() {
     );
   }
 
-  // ── Empty state ──────────────────────────────────────────────────────────
   if (!currentResult) {
     return (
       <div className="h-full flex items-center justify-center p-8">
@@ -53,19 +105,17 @@ export default function VisualizationPanel() {
     );
   }
 
-  const { data } = currentResult;
-  const { results, chartType, narrative, structuredQuery } = data;
-  const chartTypeObj = typeof chartType === "string" ? { type: chartType } : chartType;
-  const isMetricCard = chartTypeObj?.type === "metric_card";
-  const isTable      = chartTypeObj?.type === "table";
-  const isEmptyState = chartTypeObj?.type === "empty_state";
-
-  // MetricCard and table don't need the Chart/Table toggle
-  const showToggle = !isMetricCard && !isTable && !isEmptyState && results?.length > 0;
+  const { data }        = currentResult;
+  const { results, chartType, narrative, structuredQuery, queryHistoryId } = data;
+  const chartTypeObj    = typeof chartType === "string" ? { type: chartType } : chartType;
+  const isMetricCard    = chartTypeObj?.type === "metric_card";
+  const isTable         = chartTypeObj?.type === "table";
+  const isEmptyState    = chartTypeObj?.type === "empty_state";
+  const showToggle      = !isMetricCard && !isTable && !isEmptyState && results?.length > 0;
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      {/* ── Header row: title + type badge + view toggle ── */}
+      {/* ── Header row ── */}
       <div className="flex items-start justify-between mb-4 gap-3">
         <div>
           {chartTypeObj?.title && (
@@ -80,23 +130,29 @@ export default function VisualizationPanel() {
           )}
         </div>
 
-        {showToggle && (
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 shrink-0">
-            {VIEW_OPTIONS.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => setView(opt)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  view === opt
-                    ? "bg-white text-gray-800 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Bookmark */}
+          <BookmarkButton queryHistoryId={queryHistoryId} />
+
+          {/* Chart/Table toggle */}
+          {showToggle && (
+            <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+              {VIEW_OPTIONS.map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => setView(opt)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                    view === opt
+                      ? "bg-white text-gray-800 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── AI Narrative ── */}
