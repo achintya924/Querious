@@ -11,6 +11,10 @@ async function generateNarrative(question, results, structuredQuery, chartType) 
       return "No data matched your query for the selected filters.";
     }
 
+    if (process.env.MOCK_AI === "true") {
+      return fallback(results);
+    }
+
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash",
       systemInstruction: NARRATIVE_SYSTEM_PROMPT,

@@ -7,9 +7,12 @@ export function useConversation() {
   const [messages, setMessages] = useState([]);
 
   const addUserMessage = useCallback((text) => {
-    const msg = { id: nextId(), type: "user", content: text, timestamp: new Date() };
-    setMessages((prev) => [...prev, msg]);
-    return msg;
+    setMessages((prev) => {
+      // A message is a follow-up if there is already at least one AI result in the history
+      const hasResult = prev.some((m) => m.type === "ai" && m.content?.type === "result");
+      const msg = { id: nextId(), type: "user", content: text, timestamp: new Date(), isFollowUp: hasResult };
+      return [...prev, msg];
+    });
   }, []);
 
   const addAIResponse = useCallback((response) => {

@@ -1,10 +1,19 @@
-export default function MessageBubble({ message }) {
-  const { type, content, timestamp } = message;
+import ContextChips from "./ContextChips";
+
+export default function MessageBubble({ message, onChipClick }) {
+  const { type, content, timestamp, isFollowUp } = message;
 
   if (type === "user") {
     return (
       <div className="flex justify-end animate-fade-in">
         <div className="max-w-[80%]">
+          {isFollowUp && (
+            <div className="flex justify-end mb-1">
+              <span className="text-[10px] text-violet-500 bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full font-medium">
+                Follow-up
+              </span>
+            </div>
+          )}
           <div className="bg-violet-600 text-white px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed">
             {content}
           </div>
@@ -44,9 +53,10 @@ export default function MessageBubble({ message }) {
     );
   }
 
-  // result type
+  // Result type
   const narrative = data?.narrative;
   const execTime  = data?.executionTime;
+  const structuredQuery = data?.structuredQuery;
 
   return (
     <div className="flex justify-start animate-fade-in">
@@ -70,6 +80,11 @@ export default function MessageBubble({ message }) {
             </span>
           )}
         </div>
+
+        {/* Context chips — follow-up suggestions */}
+        {structuredQuery && onChipClick && (
+          <ContextChips structuredQuery={structuredQuery} onSelect={onChipClick} />
+        )}
       </div>
     </div>
   );

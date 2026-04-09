@@ -1,7 +1,9 @@
 import api from "./api";
 
-export async function submitQuery(question) {
-  const { data } = await api.post("/query", { question });
+export async function submitQuery(question, sessionId = null) {
+  const body = { question };
+  if (sessionId) body.sessionId = sessionId;
+  const { data } = await api.post("/query", body);
   return data;
 }
 
@@ -13,4 +15,8 @@ export async function getSuggestions() {
 export async function getSchema() {
   const { data } = await api.get("/schema");
   return data;
+}
+
+export async function deleteSession(sessionId) {
+  await api.delete(`/sessions/${sessionId}`);
 }

@@ -5,6 +5,7 @@ const sessionSchema = new mongoose.Schema({
   conversation_context: [{ type: mongoose.Schema.Types.Mixed }],
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
+  ended_at:  { type: Date, default: null },
 });
 
 sessionSchema.pre("save", function (next) {
