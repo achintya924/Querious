@@ -1,7 +1,9 @@
-const express    = require("express");
-const cors       = require("cors");
-const helmet     = require("helmet");
-const compression = require("compression");
+const express         = require("express");
+const cors            = require("cors");
+const helmet          = require("helmet");
+const compression     = require("compression");
+const cookieParser    = require("cookie-parser");
+const mongoSanitize   = require("express-mongo-sanitize");
 
 const inputSanitizer          = require("./middleware/inputSanitizer");
 const errorHandler            = require("./middleware/errorHandler");
@@ -9,27 +11,35 @@ const { generalLimiter, authLimiter, queryLimiter } = require("./middleware/rate
 const { getCacheSize }        = require("./services/cache/queryCache");
 
 const app = express();
+const isProd = process.env.NODE_ENV === "production";
 
-// ── Security & perf ──────────────────────────────────────────────────────────
-app.use(helmet());
+// ── Security headers ──────────────────────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],  // Recharts uses inline styles
+      imgSrc:     ["'self'", "data:"],
+      connectSrc: ["'self'", process.env.AI_BASE_URL].filter(Boolean),
+    },
+  },
+  crossOriginEmbedderPolicy: false, // required for Recharts
+}));
 app.use(compression());
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
-const isProd = process.env.NODE_ENV === "production";
-
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow requests with no origin (mobile apps, curl, Postman, etc.)
     if (!origin) return cb(null, true);
 
-    // In production, only allow the explicitly configured frontend URL
     if (isProd) {
       const allowed = process.env.FRONTEND_URL;
       if (allowed && origin === allowed) return cb(null, true);
       return cb(new Error(`CORS: origin ${origin} not allowed`));
     }
 
-    // In development, allow any localhost / 127.0.0.1 origin regardless of port
+    // Development: allow any localhost / 127.0.0.1 port (Vite picks dynamically)
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
       return cb(null, true);
     }
@@ -39,20 +49,27 @@ app.use(cors({
   credentials: true,
 }));
 
-// ── Body parsing + sanitization ──────────────────────────────────────────────
+// ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
+
+// ── MongoDB operator injection prevention ────────────────────────────────────
+// Strips $ and . from req.body, req.params, req.query
+app.use(mongoSanitize());
+
+// ── XSS + trim sanitization ───────────────────────────────────────────────────
 app.use(inputSanitizer);
 
 // ── General rate limit (all protected API routes) ────────────────────────────
 app.use("/api", generalLimiter);
 
-// ── Health check (before auth rate limiter) ───────────────────────────────────
+// ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
   const mongoose = require("mongoose");
   res.json({
     status:      "ok",
     name:        "Querious API",
-    version:     "0.8.0",
+    version:     "0.9.0",
     environment: process.env.NODE_ENV || "development",
     database:    mongoose.connection.readyState === 1 ? "connected" : "disconnected",
     aiProvider:  new URL(process.env.AI_BASE_URL || "https://openrouter.ai/api/v1").hostname,

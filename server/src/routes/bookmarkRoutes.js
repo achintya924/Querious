@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const auth = require("../middleware/auth");
+const { validate, schemas } = require("../middleware/validate");
 const {
   addBookmark,
   getBookmarks,
@@ -11,8 +12,8 @@ const {
 const router = Router();
 
 router.get("/",                        auth, getBookmarks);
-router.post("/",                       auth, addBookmark);
-router.patch("/:id",                   auth, updateBookmark);
+router.post("/",                       auth, validate(schemas.addBookmark),    addBookmark);
+router.patch("/:id",                   auth, validate(schemas.updateBookmark), updateBookmark);
 router.delete("/by-query/:queryId",    auth, removeBookmarkByQueryId);
 router.delete("/:id",                  auth, removeBookmark);
 

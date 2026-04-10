@@ -1,8 +1,19 @@
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const jwt    = require("jsonwebtoken");
+const User   = require("../models/User");
+const { logAuditEvent } = require("../middleware/auditLogger");
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isProd = process.env.NODE_ENV === "production";
+// 7 days in ms — matches the default JWT_EXPIRY
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure:   isProd,      // HTTPS only in production
+  sameSite: "strict",
+  path:     "/",
+  maxAge:   COOKIE_MAX_AGE,
+};
 
 function signToken(user) {
   return jwt.sign(
@@ -18,19 +29,10 @@ function userPayload(user) {
 
 // POST /api/auth/register
 async function register(req, res) {
+  // Input already validated + coerced by Zod middleware
   const { name, email, password } = req.body;
 
-  if (!name || !email || !password) {
-    return res.status(400).json({ message: "Name, email, and password are required" });
-  }
-  if (!EMAIL_RE.test(email)) {
-    return res.status(400).json({ message: "Invalid email format" });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ message: "Password must be at least 6 characters" });
-  }
-
-  const existing = await User.findOne({ email: email.toLowerCase() });
+  const existing = await User.findOne({ email });
   if (existing) {
     return res.status(409).json({ message: "An account with that email already exists" });
   }
@@ -39,29 +41,35 @@ async function register(req, res) {
   const user = await User.create({ name, email, password_hash });
 
   const token = signToken(user);
-  return res.status(201).json({ token, user: userPayload(user) });
+  res.cookie("querious_token", token, COOKIE_OPTIONS);
+
+  logAuditEvent("register", { req, userId: user._id.toString() });
+
+  return res.status(201).json({ user: userPayload(user) });
 }
 
 // POST /api/auth/login
 async function login(req, res) {
   const { email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required" });
-  }
-
-  const user = await User.findOne({ email: email.toLowerCase() });
+  const user = await User.findOne({ email });
   if (!user) {
+    logAuditEvent("login_failure", { req, details: { email, reason: "user not found" } });
     return res.status(401).json({ message: "Invalid credentials" });
   }
 
   const match = await bcrypt.compare(password, user.password_hash);
   if (!match) {
+    logAuditEvent("login_failure", { req, details: { email, reason: "wrong password" } });
     return res.status(401).json({ message: "Invalid credentials" });
   }
 
   const token = signToken(user);
-  return res.json({ token, user: userPayload(user) });
+  res.cookie("querious_token", token, COOKIE_OPTIONS);
+
+  logAuditEvent("login_success", { req, userId: user._id.toString() });
+
+  return res.json({ user: userPayload(user) });
 }
 
 // GET /api/auth/me  (protected)
@@ -73,4 +81,11 @@ async function me(req, res) {
   return res.json({ user: userPayload(user) });
 }
 
-module.exports = { register, login, me };
+// POST /api/auth/logout
+function logout(req, res) {
+  res.clearCookie("querious_token", { path: "/" });
+  logAuditEvent("logout", { req, userId: req.user?.userId });
+  return res.json({ success: true });
+}
+
+module.exports = { register, login, me, logout };
