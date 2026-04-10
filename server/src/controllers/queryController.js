@@ -5,12 +5,14 @@ const { validateQuery }     = require("../services/query/schemaValidator");
 const { buildPipeline }     = require("../services/query/pipelineBuilder");
 const { recommendChart }    = require("../services/query/chartRecommender");
 const { createSession, getSession, updateSession } = require("../services/session/sessionManager");
-const QueryHistory          = require("../models/QueryHistory");
-const Order                 = require("../models/Order");
-const Customer              = require("../models/Customer");
-const Product               = require("../models/Product");
+const { getCachedResult, setCachedResult } = require("../services/cache/queryCache");
+const QueryHistory = require("../models/QueryHistory");
+const Order        = require("../models/Order");
+const Customer     = require("../models/Customer");
+const Product      = require("../models/Product");
 
 const MODEL_MAP = { orders: Order, customers: Customer, products: Product };
+const isDev = process.env.NODE_ENV !== "production";
 
 async function processQuery(req, res) {
   const start = Date.now();
@@ -20,11 +22,14 @@ async function processQuery(req, res) {
     return res.status(400).json({ success: false, error: "question is required and must be a non-empty string" });
   }
 
+  const trimmedQuestion = question.trim();
+
   try {
     // ── 1. Resolve session & conversation context ────────────────────────────
     let sessionId = incomingSessionId || null;
     let previousQuery = null;
     let conversationHistory = [];
+    const isFollowUp = Boolean(sessionId);
 
     if (sessionId) {
       const session = await getSession(sessionId);
@@ -33,20 +38,33 @@ async function processQuery(req, res) {
         const lastEntry = conversationHistory[conversationHistory.length - 1];
         previousQuery = lastEntry?.structuredQuery || null;
       } else {
-        // Session not found or ended — start fresh
         sessionId = null;
       }
     }
 
-    // Auto-create session if none provided or session was invalid
     if (!sessionId) {
       sessionId = await createSession(req.user.userId);
     }
 
-    // ── 2. Interpret: NL → structured JSON via Gemini ────────────────────────
-    const structuredQuery = await interpretQuery(question.trim(), previousQuery, conversationHistory);
+    // ── 2. Cache check (skip for follow-ups — context changes the answer) ────
+    if (!isFollowUp) {
+      const cached = getCachedResult(trimmedQuestion, req.user.userId);
+      if (cached) {
+        if (isDev) console.log(`[CACHE HIT] "${trimmedQuestion}"`);
+        return res.json({
+          success: true,
+          type: "result",
+          cached: true,
+          data: { ...cached, sessionId, executionTime: Date.now() - start },
+        });
+      }
+      if (isDev) console.log(`[CACHE MISS] "${trimmedQuestion}"`);
+    }
 
-    // ── 3. Clarification needed? ─────────────────────────────────────────────
+    // ── 3. Interpret ─────────────────────────────────────────────────────────
+    const structuredQuery = await interpretQuery(trimmedQuestion, previousQuery, conversationHistory);
+
+    // ── 4. Clarification needed? ─────────────────────────────────────────────
     if ((structuredQuery.confidence ?? 1) < 0.7) {
       return res.json({
         success: true,
@@ -56,37 +74,35 @@ async function processQuery(req, res) {
       });
     }
 
-    // ── 4. Resolve relative date expressions ─────────────────────────────────
+    // ── 5. Resolve relative date expressions ─────────────────────────────────
     if (structuredQuery.filters) {
       structuredQuery.filters = resolveDates(structuredQuery.filters);
     }
 
-    // ── 5. Schema validation ──────────────────────────────────────────────────
+    // ── 6. Schema validation ──────────────────────────────────────────────────
     const validation = validateQuery(structuredQuery);
     if (!validation.valid) {
       return res.status(422).json({ success: false, error: validation.error });
     }
     const cleanedQuery = validation.query;
 
-    // ── 6. Build aggregation pipeline ────────────────────────────────────────
+    // ── 7. Build pipeline ────────────────────────────────────────────────────
     const pipeline = buildPipeline(cleanedQuery);
 
-    // ── 7. Execute against MongoDB ────────────────────────────────────────────
-    const Model = MODEL_MAP[cleanedQuery.collection];
+    // ── 8. Execute ───────────────────────────────────────────────────────────
+    const Model   = MODEL_MAP[cleanedQuery.collection];
     const results = await Model.aggregate(pipeline);
 
-    // ── 8. Chart recommendation ───────────────────────────────────────────────
+    // ── 9. Chart + narrative ──────────────────────────────────────────────────
     const chartType = recommendChart(cleanedQuery, results);
+    const narrative = await generateNarrative(trimmedQuestion, results, cleanedQuery, chartType);
 
-    // ── 9. Narrative generation ───────────────────────────────────────────────
-    const narrative = await generateNarrative(question.trim(), results, cleanedQuery, chartType);
-
-    // ── 10. Persist to query history ──────────────────────────────────────────
+    // ── 10. Persist to history ───────────────────────────────────────────────
     const latency_ms = Date.now() - start;
     const historyDoc = await QueryHistory.create({
       user_id:              req.user.userId,
       session_id:           sessionId,
-      natural_query:        question.trim(),
+      natural_query:        trimmedQuestion,
       structured_params:    cleanedQuery,
       aggregation_pipeline: pipeline,
       result_data:          results,
@@ -95,10 +111,22 @@ async function processQuery(req, res) {
       latency_ms,
     });
 
-    // ── 11. Update session context ────────────────────────────────────────────
-    await updateSession(sessionId, { question: question.trim(), structuredQuery: cleanedQuery });
+    // ── 11. Update session ────────────────────────────────────────────────────
+    await updateSession(sessionId, { question: trimmedQuestion, structuredQuery: cleanedQuery });
 
-    // ── 12. Respond ───────────────────────────────────────────────────────────
+    // ── 12. Cache the result (non-follow-up only) ────────────────────────────
+    if (!isFollowUp) {
+      setCachedResult(trimmedQuestion, req.user.userId, {
+        results,
+        chartType,
+        narrative,
+        structuredQuery: cleanedQuery,
+        pipeline,
+        queryHistoryId: historyDoc._id.toString(),
+      });
+    }
+
+    // ── 13. Respond ───────────────────────────────────────────────────────────
     return res.json({
       success: true,
       type: "result",

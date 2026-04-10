@@ -1,8 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
-export default function QueryInput({ onSubmit, loading, initialValue = "" }) {
+export default function QueryInput({ onSubmit, loading, initialValue = "", inputRef: externalRef }) {
   const [value, setValue] = useState(initialValue);
-  const textareaRef = useRef(null);
+  const internalRef = useRef(null);
+  const textareaRef = externalRef || internalRef;
 
   // When a suggested query is selected, we get a new initialValue
   // We need to update internal state when that prop changes

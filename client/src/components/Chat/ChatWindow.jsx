@@ -3,10 +3,14 @@ import MessageBubble from "./MessageBubble";
 import QueryInput from "./QueryInput";
 import SuggestedQueries from "./SuggestedQueries";
 import { useConversationContext } from "../../context/ConversationContext";
+import { useNavigate } from "react-router-dom";
 
-export default function ChatWindow({ schemaOpen, onToggleSchema }) {
-  const { messages, loading, submitQuery, clearConversation } = useConversationContext();
+export default function ChatWindow({ schemaOpen, onToggleSchema, inputRef: externalInputRef }) {
+  const { messages, loading, submitQuery, retryLast, clearConversation } = useConversationContext();
   const bottomRef  = useRef(null);
+  const internalInputRef = useRef(null);
+  const inputRef = externalInputRef || internalInputRef;
+  const navigate = useNavigate();
   const [pendingQuery, setPendingQuery] = useState("");
 
   useEffect(() => {
@@ -66,7 +70,12 @@ export default function ChatWindow({ schemaOpen, onToggleSchema }) {
         ) : (
           <div className="px-4 py-4 space-y-4">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} onChipClick={handleSubmit} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                onChipClick={handleSubmit}
+                onRetry={msg.type === "error" ? retryLast : undefined}
+              />
             ))}
 
             {loading && (
@@ -90,6 +99,7 @@ export default function ChatWindow({ schemaOpen, onToggleSchema }) {
         onSubmit={handleSubmit}
         loading={loading}
         initialValue={pendingQuery}
+        inputRef={inputRef}
       />
     </div>
   );

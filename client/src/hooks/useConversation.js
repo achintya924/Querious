@@ -21,8 +21,8 @@ export function useConversation() {
     return msg;
   }, []);
 
-  const addErrorMessage = useCallback((errorText) => {
-    const msg = { id: nextId(), type: "error", content: errorText, timestamp: new Date() };
+  const addErrorMessage = useCallback((errorText, retryable = true) => {
+    const msg = { id: nextId(), type: "error", content: errorText, timestamp: new Date(), retryable };
     setMessages((prev) => [...prev, msg]);
     return msg;
   }, []);

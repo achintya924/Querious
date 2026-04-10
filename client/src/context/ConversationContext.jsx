@@ -5,9 +5,10 @@ import { useConversation } from "../hooks/useConversation";
 const ConversationContext = createContext(null);
 
 export function ConversationProvider({ children }) {
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState(null);
-  const sessionIdRef                = useRef(null); // persisted across renders without triggering re-renders
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState(null);
+  const sessionIdRef                  = useRef(null);
+  const lastQuestionRef               = useRef(null); // for retry
 
   const {
     messages,
@@ -18,15 +19,14 @@ export function ConversationProvider({ children }) {
     clearConversation: clearMessages,
   } = useConversation();
 
-  const submitQuery = useCallback(async (question) => {
+  const _execute = useCallback(async (question) => {
     setLoading(true);
     setError(null);
-    addUserMessage(question);
+    lastQuestionRef.current = question;
 
     try {
       const response = await apiSubmitQuery(question, sessionIdRef.current);
 
-      // Persist the sessionId returned by the server for subsequent follow-ups
       const returnedSessionId = response?.data?.sessionId;
       if (returnedSessionId) {
         sessionIdRef.current = returnedSessionId;
@@ -35,36 +35,40 @@ export function ConversationProvider({ children }) {
       addAIResponse(response);
       return response;
     } catch (err) {
-      const message =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        (err.message === "Network Error"
-          ? "Unable to reach the server. Please try again."
-          : err.message) ||
-        "Something went wrong";
+      const message = err.userMessage || err.response?.data?.error || err.message || "Something went wrong";
       setError(message);
-      addErrorMessage(message);
+      addErrorMessage(message, err.isRateLimit || err.isServiceUnavailable);
     } finally {
       setLoading(false);
     }
-  }, [addUserMessage, addAIResponse, addErrorMessage]);
+  }, [addAIResponse, addErrorMessage]);
+
+  const submitQuery = useCallback(async (question) => {
+    addUserMessage(question);
+    return _execute(question);
+  }, [addUserMessage, _execute]);
+
+  const retryLast = useCallback(async () => {
+    const question = lastQuestionRef.current;
+    if (!question || loading) return;
+    return _execute(question);
+  }, [loading, _execute]);
 
   const clearConversation = useCallback(async () => {
-    // End the current session on the server (fire-and-forget)
     if (sessionIdRef.current) {
       deleteSession(sessionIdRef.current).catch(() => {});
       sessionIdRef.current = null;
     }
+    lastQuestionRef.current = null;
     clearMessages();
     setError(null);
   }, [clearMessages]);
 
-  // Expose whether we're inside an ongoing session (for follow-up badge logic)
   const hasSession = Boolean(sessionIdRef.current);
 
   return (
     <ConversationContext.Provider
-      value={{ messages, currentResult, loading, error, hasSession, submitQuery, clearConversation }}
+      value={{ messages, currentResult, loading, error, hasSession, submitQuery, retryLast, clearConversation }}
     >
       {children}
     </ConversationContext.Provider>
