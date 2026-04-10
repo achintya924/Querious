@@ -2,7 +2,17 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
-  withCredentials: true, // send httpOnly cookies on every request
+  withCredentials: true, // send httpOnly cookies when the browser allows it
+});
+
+// Attach stored token as Authorization header (fallback for cross-domain where
+// cookies are blocked by the browser despite sameSite:none)
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 // Classify errors into user-friendly messages

@@ -7,27 +7,33 @@ export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount — attempt to restore session from httpOnly cookie
+  // On mount — restore session.
+  // withCredentials sends the httpOnly cookie if the browser allows it (same-domain
+  // or cross-domain with sameSite:none + Secure). If that fails with 401 the
+  // request interceptor will have already attached the localStorage token as an
+  // Authorization header, so the same /auth/me call covers the header path too.
   useEffect(() => {
     api.get("/auth/me")
       .then(({ data }) => setUser(data.user))
-      .catch(() => {}) // no valid cookie — stay logged out
+      .catch(() => {}) // no valid session — stay logged out
       .finally(() => setLoading(false));
   }, []);
 
   async function register(name, email, password) {
     const { data } = await api.post("/auth/register", { name, email, password });
-    // Cookie is set by the server; just store the user object
+    // Persist token for the Authorization-header fallback path
+    if (data.token) localStorage.setItem("token", data.token);
     setUser(data.user);
   }
 
   async function login(email, password) {
     const { data } = await api.post("/auth/login", { email, password });
+    if (data.token) localStorage.setItem("token", data.token);
     setUser(data.user);
   }
 
   async function logout() {
-    // Ask the server to clear the httpOnly cookie
+    localStorage.removeItem("token");
     await api.post("/auth/logout").catch(() => {});
     setUser(null);
   }

@@ -7,10 +7,12 @@ const isProd = process.env.NODE_ENV === "production";
 // 7 days in ms — matches the default JWT_EXPIRY
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
+// sameSite "none" + secure:true is required for cross-domain cookies (Vercel ↔ Render).
+// In development, secure:false so the cookie works on plain http://localhost.
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure:   isProd,      // HTTPS only in production
-  sameSite: "strict",
+  secure:   isProd,
+  sameSite: isProd ? "none" : "lax",
   path:     "/",
   maxAge:   COOKIE_MAX_AGE,
 };
@@ -45,7 +47,8 @@ async function register(req, res) {
 
   logAuditEvent("register", { req, userId: user._id.toString() });
 
-  return res.status(201).json({ user: userPayload(user) });
+  // Return token in body as well — needed when cross-domain cookies are blocked
+  return res.status(201).json({ token, user: userPayload(user) });
 }
 
 // POST /api/auth/login
@@ -69,7 +72,8 @@ async function login(req, res) {
 
   logAuditEvent("login_success", { req, userId: user._id.toString() });
 
-  return res.json({ user: userPayload(user) });
+  // Return token in body as well — needed when cross-domain cookies are blocked
+  return res.json({ token, user: userPayload(user) });
 }
 
 // GET /api/auth/me  (protected)
